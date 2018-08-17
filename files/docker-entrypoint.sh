@@ -2,77 +2,89 @@
 
 set -eu
 
-create_ssl_config() {
-cat <<-'EOF' > /etc/nginx/conf.d/ssl-default.conf
-server {
-    listen 443 ssl http2;
-    server_name _;
+_proxy_target() {
+    CONFIG_FILENAME=$1
 
-    ssl on;
-    ssl_certificate /data/ssl/cert.pem;
-    ssl_certificate_key /data/ssl/key.pem;
-    add_header		Strict-Transport-Security		"max-age=31536000;" always;
+    cat <<-EOF >> "$CONFIG_FILENAME"
+        location / {
+            set \$proxy_target $PROXY_TARGET;
 EOF
+    cat <<-'EOF' >> "$CONFIG_FILENAME"
+            proxy_pass                  $proxy_target;
+            proxy_http_version		    1.1;
+            proxy_set_header		    Host $host;
+            proxy_set_header		    X-Real-IP $remote_addr;
+            proxy_set_header		    X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_hide_header		    Pragma;
+            proxy_hide_header		    Cache-Control;
+            proxy_send_timeout		    120;
+            proxy_read_timeout		    120;
+            proxy_connect_timeout	    30;
+            send_timeout			    120;
+            client_body_timeout		    120;
+            proxy_set_header		    X-Forwarded-Proto $scheme;
+            chunked_transfer_encoding	off;
+            proxy_buffering			    off;
+            proxy_cache			        off;
+        }
+EOF
+}
 
-if [ -z "$PROXY_TARGET" ] && [ -z "$NGINX_CONFIG" ]; then
-cat <<-'EOF' >> /etc/nginx/conf.d/ssl-default.conf
-    location / {
-        root /usr/share/nginx/html;
-        index index.html index.htm;
+_http_server_begin() {
+    CONFIG_FILENAME=$1
+    cat <<-'EOF' > "$CONFIG_FILENAME"
+    server {
+        listen 80;
+        server_name _;    
+EOF
+}
+
+_https_server_begin() {
+    CONFIG_FILENAME=$1
+    cat <<-'EOF' > "$CONFIG_FILENAME"
+    server {
+        listen 443 ssl http2;
+        server_name _;
+
+        ssl on;
+        ssl_certificate /data/ssl/cert.pem;
+        ssl_certificate_key /data/ssl/key.pem;
+        add_header		Strict-Transport-Security		"max-age=31536000;" always;
+EOF
+}
+
+_server_end() {
+    CONFIG_FILENAME=$1
+    cat <<-'EOF' >> "$CONFIG_FILENAME"
     }
-    # redirect server error pages to the static page /50x.html
-    #
-    error_page   500 502 503 504  /50x.html;
-    location = /50x.html {
-        root   /usr/share/nginx/html;
-    }
-EOF
-elif [ -n "$NGINX_CONFIG" ]; then
-    echo "$NGINX_CONFIG" >> /etc/nginx/conf.d/ssl-default.conf
-elif [ -n "$PROXY_TARGET" ]; then
-cat <<-EOF >> /etc/nginx/conf.d/ssl-default.conf
-location / {
-    set \$proxy_target $PROXY_TARGET;
-EOF
-cat <<-'EOF' >> /etc/nginx/conf.d/ssl-default.conf
-    proxy_pass                  $proxy_target;
-    proxy_http_version		    1.1;
-    proxy_set_header		    Host $host;
-    proxy_set_header		    X-Real-IP $remote_addr;
-    proxy_set_header		    X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_hide_header		    Pragma;
-    proxy_hide_header		    Cache-Control;
-    proxy_send_timeout		    120;
-    proxy_read_timeout		    120;
-    proxy_connect_timeout	    30;
-    send_timeout			    120;
-    client_body_timeout		    120;
-    proxy_set_header		    X-Forwarded-Proto $scheme;
-    chunked_transfer_encoding	off;
-    proxy_buffering			    off;
-    proxy_cache			        off;
-}
-EOF
-fi
-
-cat <<-'EOF' >> /etc/nginx/conf.d/ssl-default.conf
-}
 EOF
 }
 
-create_https_redirect() {
-if [ "$HTTPS_REDIRECT" = 1 ]; then
-cat <<-'EOF' > /etc/nginx/conf.d/default.conf
-server {
-    listen 80;
-    server_name _;
+_location_default() {
+    CONFIG_FILENAME=$1
 
-    location / {
-        return 301 https://$host$request_uri;
-    }
-}
+    cat <<-'EOF' >> "$CONFIG_FILENAME"
+        location / {
+            root /usr/share/nginx/html;
+            index index.html index.htm;
+        }
+        # redirect server error pages to the static page /50x.html
+        #
+        error_page   500 502 503 504  /50x.html;
+        location = /50x.html {
+            root   /usr/share/nginx/html;
+        }
 EOF
-fi
+}
+
+_location_https_redirect() {
+    CONFIG_FILENAME=$1
+
+    cat <<-'EOF' >> "$CONFIG_FILENAME"
+        location / {
+            return 301 https://$host$request_uri;
+        }
+EOF
 }
 
 create_gzip_config() {
@@ -95,6 +107,48 @@ create_resolver_config() {
 cat <<-EOF > /etc/nginx/conf.d/01-resolver.conf    
     resolver $RESOLVER_IPS;
 EOF
+}
+
+create_https_config() {
+    _CONFIG_FILENAME=/etc/nginx/conf.d/ssl-default.conf
+
+    if [ "$HTTPS_ACTIVE" != 1 ]; then
+        return
+    fi
+
+    _https_server_begin "$_CONFIG_FILENAME"
+
+    if [ -z "$PROXY_TARGET" ] && [ -z "$NGINX_CONFIG" ]; then
+        _location_default "$_CONFIG_FILENAME"
+    elif [ -n "$NGINX_HTTPS_CONFIG" ]; then
+        echo "$NGINX_HTTPS_CONFIG" >> "$_CONFIG_FILENAME"
+    elif [ -n "$NGINX_CONFIG" ]; then
+        echo "$NGINX_CONFIG" >> "$_CONFIG_FILENAME"
+    elif [ -n "$PROXY_TARGET" ]; then
+        _proxy_target "$_CONFIG_FILENAME"
+    fi
+
+    _server_end "$_CONFIG_FILENAME"
+}
+
+create_http_config() {
+    _CONFIG_FILENAME=/etc/nginx/conf.d/default.conf
+
+    _http_server_begin "$_CONFIG_FILENAME"
+
+    if [ "$HTTPS_ACTIVE" = 1 ] && [ "$HTTPS_REDIRECT" = 1 ]; then
+        _location_https_redirect "$_CONFIG_FILENAME"
+    elif [ -z "$PROXY_TARGET" ] && [ -z "$NGINX_CONFIG" ]; then
+        _location_default "$_CONFIG_FILENAME"
+    elif [ -n "$NGINX_HTTP_CONFIG" ]; then
+        echo "$NGINX_HTTP_CONFIG" >> "$_CONFIG_FILENAME"
+    elif [ -n "$NGINX_CONFIG" ]; then
+        echo "$NGINX_CONFIG" >> "$_CONFIG_FILENAME"
+    elif [ -n "$PROXY_TARGET" ]; then
+        _proxy_target "$_CONFIG_FILENAME"
+    fi
+
+    _server_end "$_CONFIG_FILENAME"
 }
 
 # Only process HTTPs if it is active and HTTPS_DOMAINS were set
@@ -125,13 +179,16 @@ if [ "${HTTPS_ACTIVE}" = 1 ] && [ -n "${HTTPS_DOMAINS}" ]; then
         /opt/acme.sh/acme.sh --install-cert --key-file "$LE_TARGET"/key.pem --fullchain-file "$LE_TARGET"/cert.pem --reloadcmd "nginx -s reload || true" $DOMAIN_OPTIONS
     fi
 
-    create_gzip_config
-    create_resolver_config
-    create_https_redirect
-    create_ssl_config
-
     # execute cron to update certificates
     crond -f &
 fi
+
+create_gzip_config
+create_resolver_config
+create_http_config
+create_https_config
+
+echo "***** GENERATED CONFIG *****"
+nginx -T
 
 exec nginx -g "daemon off;"
