@@ -18,7 +18,7 @@ ENV NGINX_CONFIG ""
 ENV NGINX_HTTP_CONFIG ""
 ENV NGINX_HTTPS_CONFIG ""
 ENV NOTIFICATION_MAIL ""
-ENV RESOLVER_IPS="127.0.0.11 8.8.8.8 8.8.4.4 valid=20s ipv6=off"
+ENV RESOLVER_IPS="127.0.0.11 valid=20s ipv6=off"
     
 # Install acme.sh and set up single crontab entry
 RUN apk add -U openssl ca-certificates curl netcat-openbsd socat && \
