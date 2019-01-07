@@ -30,12 +30,21 @@ EOF
 EOF
 }
 
+_location_lets_encrypt() {
+    CONFIG_FILENAME=$1
+    cat <<-'EOF' >> "$CONFIG_FILENAME"
+        location ~ /.well-known {
+            root /tmp/letsencrypt;
+        }
+EOF
+}
+
 _http_server_begin() {
     CONFIG_FILENAME=$1
     cat <<-'EOF' > "$CONFIG_FILENAME"
     server {
         listen 80;
-        server_name _;    
+        server_name _;
 EOF
 }
 
@@ -88,7 +97,7 @@ EOF
 }
 
 create_gzip_config() {
-cat <<-'EOF' > /etc/nginx/conf.d/00-gzip.conf    
+cat <<-'EOF' > /etc/nginx/conf.d/00-gzip.conf
     gzip on;
     gzip_buffers 16 8k;
     gzip_comp_level 1;
@@ -104,7 +113,7 @@ EOF
 }
 
 create_resolver_config() {
-cat <<-EOF > /etc/nginx/conf.d/01-resolver.conf    
+cat <<-EOF > /etc/nginx/conf.d/01-resolver.conf
     resolver $RESOLVER_IPS;
 EOF
 }
@@ -117,6 +126,7 @@ create_https_config() {
     fi
 
     _https_server_begin "$_CONFIG_FILENAME"
+    _location_lets_encrypt "$_CONFIG_FILENAME"
 
     if [ -z "$PROXY_TARGET" ] && [ -z "$NGINX_CONFIG" ]; then
         _location_default "$_CONFIG_FILENAME"
@@ -136,6 +146,10 @@ create_http_config() {
 
     _http_server_begin "$_CONFIG_FILENAME"
 
+    if [ "$HTTPS_ACTIVE" = 1 ]; then
+        _location_lets_encrypt "$_CONFIG_FILENAME"
+    fi
+
     if [ "$HTTPS_ACTIVE" = 1 ] && [ "$HTTPS_REDIRECT" = 1 ]; then
         _location_https_redirect "$_CONFIG_FILENAME"
     elif [ -z "$PROXY_TARGET" ] && [ -z "$NGINX_CONFIG" ]; then
@@ -151,8 +165,19 @@ create_http_config() {
     _server_end "$_CONFIG_FILENAME"
 }
 
+create_basic_lets_encrypt_config() {
+    _CONFIG_FILENAME=/etc/nginx/conf.d/default.conf
+
+    _http_server_begin "$_CONFIG_FILENAME"
+    _location_lets_encrypt "$_CONFIG_FILENAME"
+    _server_end "$_CONFIG_FILENAME"
+}
+
 # Only process HTTPs if it is active and HTTPS_DOMAINS were set
 if [ "${HTTPS_ACTIVE}" = 1 ] && [ -n "${HTTPS_DOMAINS}" ]; then
+    mkdir -p /tmp/letsencrypt/.well-known/acme-challenge
+    mkdir -p "$LE_TARGET"
+
     if [ "${HTTPS_TEST_MODE}" = 1 ]; then
         TEST_OPTION="--test"
     else
@@ -174,15 +199,27 @@ if [ "${HTTPS_ACTIVE}" = 1 ] && [ -n "${HTTPS_DOMAINS}" ]; then
         DOMAIN_OPTIONS="$DOMAIN_OPTIONS -d ""$DOMAIN"
     done
     if [ "${DOMAIN_IN_LIST}" != 1 ]; then
-        mkdir -p "$LE_TARGET"
-        /opt/acme.sh/acme.sh --issue --standalone $TEST_OPTION $DOMAIN_OPTIONS || true
-        /opt/acme.sh/acme.sh --install-cert --key-file "$LE_TARGET"/key.pem --fullchain-file "$LE_TARGET"/cert.pem --reloadcmd "nginx -s reload || true" $DOMAIN_OPTIONS
+
+        # create basic config for first time certificate generation
+        create_basic_lets_encrypt_config
+
+        # start a temporary nginx instance in background
+        nginx -g "daemon off;" &
+
+        # issue and install certificate
+        /opt/acme.sh/acme.sh --issue -w /tmp/letsencrypt $TEST_OPTION $DOMAIN_OPTIONS
+        /opt/acme.sh/acme.sh --install-cert --key-file "$LE_TARGET"/key.pem --fullchain-file "$LE_TARGET"/cert.pem --reloadcmd "nginx -s reload" $DOMAIN_OPTIONS
+
+        # kill all temporary nginx processes
+        pkill nginx
+        sleep 5
     fi
 
-    # execute cron to update certificates
+    # execute cron to update certificates when needed
     crond -f &
 fi
 
+# create full nginx config
 create_gzip_config
 create_resolver_config
 create_http_config
@@ -190,5 +227,7 @@ create_https_config
 
 echo "***** GENERATED CONFIG *****"
 nginx -T
+echo "***** CONFIG END ******"
 
+# start main nginx instance
 exec nginx -g "daemon off;"
