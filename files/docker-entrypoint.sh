@@ -22,7 +22,7 @@ EOF
             proxy_connect_timeout	    30;
             send_timeout			    120;
             client_body_timeout		    120;
-            proxy_set_header		    X-Forwarded-Proto $scheme;
+            proxy_set_header		    X-Forwarded-Proto $effective_scheme;
             chunked_transfer_encoding	off;
             proxy_buffering			    off;
             proxy_cache			        off;
@@ -93,6 +93,15 @@ _location_https_redirect() {
         location / {
             return 301 https://$host$request_uri;
         }
+EOF
+}
+
+create_esm_config() {
+cat <<-'EOF' > /etc/nginx/conf.d/02-effective-scheme-map.conf
+    map $http_x_forwarded_proto $effective_scheme {
+        default $http_x_forwarded_proto;
+	""      $scheme;
+    }
 EOF
 }
 
@@ -221,6 +230,7 @@ fi
 
 # create full nginx config
 create_gzip_config
+create_esm_config
 create_resolver_config
 create_http_config
 create_https_config
@@ -231,3 +241,4 @@ echo "***** CONFIG END ******"
 
 # start main nginx instance
 exec nginx -g "daemon off;"
+
