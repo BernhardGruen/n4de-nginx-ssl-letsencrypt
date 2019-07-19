@@ -3,7 +3,7 @@ nginx mit SSL-Unterstützung
 
 Einfacher nginx Container mit SSL-Unterstützung über acme.sh
 
-Wichtige Variablen:
+Wichtige Container Variablen:
 
 * `HTTPS_ACTIVE` (default 0)
   1 aktiviert HTTPS Unterstützung
@@ -18,5 +18,12 @@ Wichtige Variablen:
   URL zu der Anfragen intern weitergereicht werden sollen
 * `NGINX_CONFIG` (default "")
   Teil der Konfiguration, die in die SSL-Konfiguration eingefügt werden soll
-* NOTIFICATION_MAIL (default "")
+* `NOTIFICATION_MAIL` (default "")
   E-Mail-Adresse für Benachrichtigungen bei Zertifikat-Ereignissen
+
+
+Zusätzliche Variablen in NGINX Config:
+
+* `$effective_scheme` 
+  Diese Variable übernimmt den Wert eines X-Forwarded-Proto Headers, sofern dieser gesetzt ist.
+  Als Fallback wird das verwendete Schema aus `$scheme` zurückgegeben.
