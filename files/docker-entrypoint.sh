@@ -194,7 +194,7 @@ if [ "${HTTPS_ACTIVE}" = 1 ] && [ -n "${HTTPS_DOMAINS}" ]; then
     fi
     
     if [ -n "$NOTIFICATION_MAIL" ]; then
-        /opt/acme.sh/acme.sh --update-account $TEST_OPTION --accountemail "$NOTIFICATION_MAIL"
+        /opt/acme.sh/acme.sh --update-account $TEST_OPTION --accountemail "$NOTIFICATION_MAIL" || echo "Account update was not possible!"
     fi
 
     DOMAIN_OPTIONS=""
