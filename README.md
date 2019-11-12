@@ -20,7 +20,8 @@ Wichtige Container Variablen:
   Teil der Konfiguration, die in die SSL-Konfiguration eingefügt werden soll
 * `NOTIFICATION_MAIL` (default "")
   E-Mail-Adresse für Benachrichtigungen bei Zertifikat-Ereignissen
-
+* `NGINX_IMAGE_FILTER` (default 0)
+  1 aktiviert Image-Filter-Modul
 
 Zusätzliche Variablen in NGINX Config:
 

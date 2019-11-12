@@ -96,6 +96,12 @@ _location_https_redirect() {
 EOF
 }
 
+add_image_filter() {
+    if [ "$NGINX_IMAGE_FILTER" = "1" ]; then
+       sed -i '1s/^/load_module \/etc\/nginx\/modules\/ngx_http_image_filter_module.so;\n/' /etc/nginx/nginx.conf
+    fi
+}
+
 create_esm_config() {
 cat <<-'EOF' > /etc/nginx/conf.d/02-effective-scheme-map.conf
     map $http_x_forwarded_proto $effective_scheme {
@@ -229,6 +235,7 @@ if [ "${HTTPS_ACTIVE}" = 1 ] && [ -n "${HTTPS_DOMAINS}" ]; then
 fi
 
 # create full nginx config
+add_image_filter
 create_gzip_config
 create_esm_config
 create_resolver_config
