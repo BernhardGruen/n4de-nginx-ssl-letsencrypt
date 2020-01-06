@@ -28,3 +28,4 @@ Zusätzliche Variablen in NGINX Config:
 * `$effective_scheme` 
   Diese Variable übernimmt den Wert eines X-Forwarded-Proto Headers, sofern dieser gesetzt ist.
   Als Fallback wird das verwendete Schema aus `$scheme` zurückgegeben.
+
