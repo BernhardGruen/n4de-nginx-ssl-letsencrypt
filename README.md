@@ -1,3 +1,5 @@
+DEPRECATED (2020-04-30)
+
 nginx mit SSL-Unterstützung
 ===========================
 
